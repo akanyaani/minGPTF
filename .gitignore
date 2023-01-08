@@ -2,3 +2,7 @@
 *.idea
 .idea
 .ipynb_checkpoints/*
+build/*
+dist/*
+minGPTF.egg-info/*
+mingptf/__pycache__/*

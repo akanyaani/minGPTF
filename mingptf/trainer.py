@@ -5,8 +5,7 @@ so nothing in this file really has anything to do with GPT specifically.
 
 import time
 from collections import defaultdict
-
-import torch
+import tensorflow as tf
 from torch.utils.data.dataloader import DataLoader
 from mingptf.utils import CfgNode as CN
 
@@ -35,14 +34,6 @@ class Trainer:
         self.optimizer = None
         self.train_dataset = train_dataset
         self.callbacks = defaultdict(list)
-
-        # determine the device we'll train on
-        if config.device == 'auto':
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        else:
-            self.device = config.device
-        self.model = self.model.to(self.device)
-        print("running on device", self.device)
 
         # variables that will be assigned to trainer class later for logging and etc
         self.iter_num = 0
