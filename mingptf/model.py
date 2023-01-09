@@ -222,7 +222,6 @@ class GPT(tf.keras.Model, ABC):
         decay = set()
         no_decay = set()
 
-        whitelist_weight_modules = (tf.keras.layers.Dense,)
         blacklist_weight_modules = (LayerNormalization, tf.keras.layers.Embedding)
 
         for layer in self.layers:
@@ -230,9 +229,6 @@ class GPT(tf.keras.Model, ABC):
                 if var.name.endswith('bias'):
                     # all biases will not be decayed
                     no_decay.add(var.name)
-                elif var.name.endswith('weight') and isinstance(layer, whitelist_weight_modules):
-                    # weights of whitelist modules will be weight decayed
-                    decay.add(var.name)
                 elif var.name.endswith('weight') and isinstance(layer, blacklist_weight_modules):
                     # weights of blacklist modules will NOT be weight decayed
                     no_decay.add(var.name)
@@ -246,11 +242,6 @@ class GPT(tf.keras.Model, ABC):
             param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" \
                                                     % (str(param_dict.keys() - union_params),)
 
-        # create the pytorch optimizer object
-        optim_groups = [
-            {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": train_config.weight_decay},
-            {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
-        ]
         optimizer = tf.keras.optimizers.experimental.AdamW(
             lr=train_config.learning_rate, weight_decay=train_config.weight_decay, beta_1=train_config.beta_1,
             beta_2=train_config.beta_2
