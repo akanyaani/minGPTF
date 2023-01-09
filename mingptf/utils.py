@@ -153,3 +153,22 @@ def top_k_logits(logits, k):
 
 def get_weights_by_name(model, name):
     return [w for w in model.weights if w.name == name][0]
+
+
+def get_perplexity(cross_entropy):
+    return tf.exp(cross_entropy)
+
+
+def get_default_train_config():
+    C = CfgNode()
+    # either model_type or (n_layer, n_head, n_embd) must be given in the config
+    C.num_workers = 4
+    # optimizer parameters
+    C.max_iters = None
+    C.batch_size = 64
+    C.learning_rate = 3e-4
+    C.beta_1 = 0.9
+    C.beta_2 = 0.95
+    C.weight_decay = 0.1  # only applied on matmul weights
+    C.clip_value = 1.0
+    return C

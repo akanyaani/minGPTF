@@ -221,24 +221,36 @@ class GPT(tf.keras.Model, ABC):
         return model
 
     def configure_optimizers(self, train_config):
-        self.train_config=train_config
-        # no_decay = set()
-        # blacklist_weight_modules = (LayerNormalization, tf.keras.layers.Embedding)
-        # for layer in self.layers:
-        #     for var in layer.trainable_variables:
-        #         if 'bias' in var.name:
-        #             # all biases will not be decayed
-        #             no_decay.add(var.ref())
-        #         elif 'weight' in var.name and isinstance(layer, blacklist_weight_modules):
-        #             # weights of blacklist modules will NOT be weight decayed
-        #             no_decay.add(var.ref())
+        decay = set()
+        no_decay = set()
 
-        self.optimizer = tf.keras.optimizers.experimental.AdamW(
-            learning_rate=train_config.learning_rate, weight_decay=train_config.weight_decay, beta_1=train_config.beta_1,
+        blacklist_weight_modules = (LayerNormalization, tf.keras.layers.Embedding)
+
+        for layer in self.layers:
+            for var in layer.trainable_variables:
+                if var.name.endswith('bias'):
+                    # all biases will not be decayed
+                    no_decay.add(var.name)
+                elif var.name.endswith('weight') and isinstance(layer, blacklist_weight_modules):
+                    # weights of blacklist modules will NOT be weight decayed
+                    no_decay.add(var.name)
+
+        # validate that we considered every parameter
+        param_dict = {pn: p for pn, p in self.trainable_variables()}
+        inter_params = decay & no_decay
+        union_params = decay | no_decay
+        assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
+        assert len(
+            param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" \
+                                                    % (str(param_dict.keys() - union_params),)
+
+        optimizer = tf.keras.optimizers.experimental.AdamW(
+            lr=train_config.learning_rate, weight_decay=train_config.weight_decay, beta_1=train_config.beta_1,
             beta_2=train_config.beta_2
         )
-        # print(no_decay)
-        self.optimizer.exclude_from_weight_decay(var_names=["bias", "embedding", "layernormalization"])
+
+        optimizer.exclude_from_weight_decay(var_list=list(blacklist_weight_modules))
+        return optimizer
 
     def generate(self, idx, max_new_tokens=512, temperature=1, top_k=8):
 
@@ -251,11 +263,10 @@ class GPT(tf.keras.Model, ABC):
         result = tf.squeeze(idx, axis=0)
         return result
 
-    def get_loss(self, real, pred):  # Applying padding mask
-        mask = tf.cast(tf.math.logical_not(tf.math.equal(real, 0)), dtype=tf.float32)
+    def get_loss(self, real, pred): #Applying padding mask
+        mask = tf.math.logical_not(tf.math.equal(real, 0))
         loss_ = self.loss_object(real, pred)
-        return tf.reduce_sum(loss_ * mask) / tf.reduce_sum(mask, axis=1)
-
+        return tf.reduce_sum(loss_*tf.cast(mask, dtype=loss_.dtype))/tf.reduce_sum(mask, axis=1)
     def _train_step(self, inputs, targets):
         with tf.GradientTape() as tape:
             predictions = self(inputs, training=True)
@@ -263,7 +274,7 @@ class GPT(tf.keras.Model, ABC):
 
         with tf.name_scope("gradients"):
             gradients = tape.gradient(loss, self.trainable_variables)
-            gradients = [(tf.clip_by_value(grad, -self.train_config.clip_value, self.train_config.clip_value))
+            gradients = [(tf.clip_by_value(grad, -self.config.clip_value, self.config.clip_value))
                          for grad in gradients]
             self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
@@ -273,30 +284,29 @@ class GPT(tf.keras.Model, ABC):
         return step, loss, perplexity
 
     def _test_step(self, inputs, targets):
-        pred = self(inputs, training=False)
-        loss = tf.reduce_mean(self.get_loss(targets, pred))
+        pred, _ = self(inputs, training=False)
+        loss = self.get_loss(targets, pred)
         perplexity = get_perplexity(loss)
         return loss, perplexity
 
-    def fit(self, train_dataset, test_dataset, test_freq=5000):
+    def fit(self, train_dataset, test_dataset):
         for (_, (inputs, targets)) in enumerate(train_dataset):
             step, loss, perplexity = self._train_step(inputs, targets)
-            if step % test_freq == 0:
+            if step % 500 == 0:
                 losses = []
                 perplexities = []
                 for (test_step, (test_inputs, test_targets)) in enumerate(test_dataset):
                     test_loss, test_perplexity = self._test_step(test_inputs, test_targets)
-
                     losses.append(test_loss)
                     perplexities.append(test_perplexity)
 
-                    if test_step == 1:
+                    if test_step == 100:
                         break
 
                 test_loss = np.mean(np.array(losses))
                 test_perplexity = np.mean(np.array(perplexities))
 
-                print(f"Steps {step.numpy()}: train loss {loss:.5f}"
+                print(f"Steps {step}: train loss {loss:.5f}"
                       f": test loss {test_loss:.5f} : perplexity {test_perplexity:.5f}")
 
 # model = GPT.from_pretrained('gpt2')
