@@ -14,6 +14,7 @@ $ pip setup.py install
 ```
 
 **Usage**
+
 Here's how you'd instantiate a GPT-2 (124M param version):
 
 ```
