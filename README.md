@@ -48,6 +48,20 @@ $ model.configure_optimizers(train_config)
 $ model.fit(train_data, test_data, test_freq=5)
 ```
 
+**References:**
+
+* ["karpathy/minGPT"](https://github.com/karpathy/minGPT)
+* ["akanyaani/gpt-2-tensorflow2.0"](https://github.com/akanyaani/gpt-2-tensorflow2.0)
+* ["Openai/gpt-2"](https://github.com/openai/gpt-2)
+* ["Huggingface pytorch-transformers"](https://github.com/huggingface/pytorch-transformers)
+* ["Tensorflow Transformers"](https://www.tensorflow.org/beta/tutorials/text/transformer)
+* ["The Illustrated GPT-2 "](https://jalammar.github.io/illustrated-gpt2/)
+* 
+**Author**
+
+* Abhay Kumar
+* Author Email : akanyaani@gmail.com
+* Follow me on [Twitter](https://twitter.com/akanyaani)
 
 **License**
 
