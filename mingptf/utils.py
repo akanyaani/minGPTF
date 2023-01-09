@@ -149,3 +149,7 @@ def top_k_logits(logits, k):
         tf.ones_like(logits, dtype=logits.dtype) * -1e10,
         logits
     )
+
+
+def get_weights_by_name(model, name):
+    return [w for w in model.weights if w.name == name][0]

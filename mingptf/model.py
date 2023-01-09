@@ -3,13 +3,9 @@ from tensorflow.keras.layers import LayerNormalization
 import numpy as np
 
 from mingptf.utils import CfgNode as CN
-from mingptf.utils import create_masks, top_k_logits
+from mingptf.utils import create_masks, top_k_logits, get_weights_by_name
 from copy import copy
 from abc import ABC
-
-
-def get_weights_by_name(model, name):
-    return [w for w in model.weights if w.name == name][0]
 
 
 def gelu(x):
@@ -208,22 +204,17 @@ class GPT(tf.keras.Model, ABC):
         hf_keys = [k.name for k in model_hf.weights if not k.name.endswith('attn/masked_bias')]  # ignore these
         md_keys = [k.name for k in model.weights]
         transposed = ['c_attn/bias', 'c_proj/bias', 'c_fc/bias', 'c_proj/bias']
-        # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla nn.Linear.
-        # this means that we have to transpose these weights when we import them
+        # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Dense.
 
         assert len(md_keys) == len(hf_keys)
         for hf, md in zip(*(hf_keys, md_keys)):
             if any(hf.endswith(w + ":0") for w in transposed):
                 assert get_weights_by_name(model_hf, hf).shape[1] == get_weights_by_name(model, md).shape
                 get_weights_by_name(model, md).assign(get_weights_by_name(model_hf, hf).numpy()[0])
-                print(np.mean(get_weights_by_name(model, md).numpy()) - np.mean(
-                    get_weights_by_name(model_hf, hf).numpy()[0]))
             else:
                 # vanilla copy over the other parameters
-                print(hf, "----", md)
                 assert get_weights_by_name(model_hf, hf).shape == get_weights_by_name(model, md).shape
                 get_weights_by_name(model, md).assign(get_weights_by_name(model_hf, hf).numpy())
-                # get_weights_by_name(model, md).numpy = get_weights_by_name(model_hf, hf).numpy
 
         return model
 
