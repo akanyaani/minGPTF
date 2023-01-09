@@ -3,8 +3,9 @@ from tensorflow.keras.layers import LayerNormalization
 import numpy as np
 
 from mingptf.utils import CfgNode as CN
-from mingptf.utils import create_masks
+from mingptf.utils import create_masks, top_k_logits
 from copy import copy
+from abc import ABC
 
 
 def get_weights_by_name(model, name):
@@ -23,11 +24,11 @@ def gelu(x):
 
 class CausalSelfAttention(tf.keras.layers.Layer):
     def __init__(self, config):
-        super().__init__()
+        super(CausalSelfAttention, self).__init__()
         assert config.n_embd % config.n_head == 0
         # key, query, value projection weights
-        self.c_attn = tf.keras.layers.Dense(config.n_embd * 3)
-        self.c_proj = tf.keras.layers.Dense(config.n_embd)
+        self.c_attn = tf.keras.layers.Dense(config.n_embd * 3, name="c_attn")
+        self.c_proj = tf.keras.layers.Dense(config.n_embd, name="c_proj")
         # Dropout Layers
         self.attn_dropout = tf.keras.layers.Dropout(config.attn_pdrop)
         self.resid_dropout = tf.keras.layers.Dropout(config.resid_pdrop)
@@ -35,7 +36,7 @@ class CausalSelfAttention(tf.keras.layers.Layer):
         self.n_head = config.n_head
         self.n_embd = config.n_embd
 
-    def __call__(self, x, mask):
+    def call(self, x, mask):
         B, T, C = tf.shape(x)  # Batch_size, Seq_len, Embedding_size
 
         self.depth = C // self.n_head
@@ -65,25 +66,25 @@ class CausalSelfAttention(tf.keras.layers.Layer):
 
 class MLP(tf.keras.layers.Layer):
     def __init__(self, config):
-        super().__init__()
-        self.c_fc = tf.keras.layers.Dense(4 * config.n_embd)
-        self.c_proj = tf.keras.layers.Dense(config.n_embd)
+        super(MLP, self).__init__()
+        self.c_fc = tf.keras.layers.Dense(4 * config.n_embd, name="c_fc")
+        self.c_proj = tf.keras.layers.Dense(config.n_embd, name="c_proj")
         self.dropout = tf.keras.layers.Dropout(config.resid_pdrop)
 
-    def __call__(self, x):
+    def call(self, x):
         return self.dropout(self.c_proj(gelu(self.c_fc(x))))
 
 
 class Block(tf.keras.layers.Layer):
     def __init__(self, config):
-        super().__init__()
-        self.ln_1 = LayerNormalization()
+        super(Block, self).__init__()
+        self.ln_1 = LayerNormalization(name="ln_1")
         self.attn = CausalSelfAttention(config)
-        self.ln_2 = LayerNormalization()
+        self.ln_2 = LayerNormalization(name="ln_2")
 
         self.mlp = MLP(config)
 
-    def __call__(self, x, mask):
+    def call(self, x, mask):
         x = x + self.attn(self.ln_1(x), mask)
         x = x + self.mlp(self.ln_2(x))
         return x
@@ -91,24 +92,19 @@ class Block(tf.keras.layers.Layer):
 
 class Transformer(tf.keras.layers.Layer):
     def __init__(self, config):
-        super().__init__()
-        self.ln_1 = LayerNormalization()
-        self.attn = CausalSelfAttention(config)
-        self.ln_2 = LayerNormalization()
+        super(Transformer, self).__init__()
+        self.wpe = tf.keras.layers.Embedding(config.block_size, config.n_embd, name="wpe")  # Position Embeddings
+        self.wte = tf.keras.layers.Embedding(config.vocab_size, config.n_embd, name="wte")  # Word Embeddings
 
-        self.mlp = MLP(config)
-
-    def __call__(self, x, mask):
-        x = x + self.attn(self.ln_1(x), mask)
-        x = x + self.mlp(self.ln_2(x))
-        return x
+        self.drop = tf.keras.layers.Dropout(config.embd_pdrop)
+        self.h = [Block(config) for _ in range(config.n_layer)]
+        self.ln_f = LayerNormalization(name="ln_f")
 
 
-class GPT(tf.keras.Model):
+class GPT(tf.keras.Model, ABC):
 
     def __init__(self, config):
-        super().__init__()
-        super().__init__()
+        super(GPT, self).__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
         self.block_size = config.block_size
@@ -138,20 +134,14 @@ class GPT(tf.keras.Model):
                                        'gpt-nano': dict(n_layer=3, n_head=3, n_embd=48),
                                    }[config.model_type])
 
-        self.wte = tf.keras.layers.Embedding(config.vocab_size, config.n_embd, name="wte")  # Word Embeddings
-        self.wpe = tf.keras.layers.Embedding(config.block_size, config.n_embd, name="wpe")  # Position Embeddings
-        self.drop = tf.keras.layers.Dropout(config.embd_pdrop)
-        self.h = [Block(config) for _ in range(config.n_layer)]
-        self.ln_f = LayerNormalization()
-
-        self(np.array(np.array([[1, 3, 5]])))  # Passing dummy input
+        self.transformer = Transformer(config)
+        self(np.array([[1, 3, 5], [2, 3, 4]]))  # Passing dummy input
         # report number of parameters (note we don't count the decoder parameters in lm_head)
         n_params = np.sum([np.prod(v.get_shape().as_list()) for v in self.weights[:-1]])
         print("number of parameters: %.2fM" % (n_params / 1e6,))
 
-    def __call__(self, x):
+    def call(self, x):
         mask = create_masks(x)
-        print(mask)
         """
         if seq len is 4 then mask looks like this
                [[0., 1., 1., 1.],
@@ -159,17 +149,22 @@ class GPT(tf.keras.Model):
                 [0., 0., 0., 1.],
                 [0., 0., 0., 0.]]
         """
-        tok_emb = self.wte(x)  # Converting ids to word embeddings
-        pos_emb = self.wpe(x)  # Converting position ids to position embeddings
-        x = self.drop(tok_emb + pos_emb)  # Embeddings Dropout
 
-        for block in self.h:
+        b, t = tf.shape(x)
+
+        pos = tf.expand_dims(tf.range(0, t), 0)
+        tok_emb = self.transformer.wte(x)  # Converting ids to word embeddings
+        pos_emb = self.transformer.wpe(pos)  # Converting position ids to position embeddings
+        x = self.transformer.drop(tok_emb + pos_emb)  # Embeddings Dropout
+
+        for block in self.transformer.h:
             x = block(x, mask)
-        x = self.ln_f(x)  # Applying layer Norm
+        x = self.transformer.ln_f(x)  # Applying layer Norm
 
         h_flat = tf.reshape(x, [-1, self.config.n_embd])
-        logits = tf.reshape(tf.matmul(h_flat, self.wte.weights, transpose_b=True), x.get_shape().as_list()[:-1] + [
-            self.config.vocab_size])  # Using Embeddings weights for vocab projection
+        logits = tf.reshape(tf.matmul(h_flat, self.transformer.wte.weights, transpose_b=True),
+                            x.get_shape().as_list()[:-1] + [
+                                self.config.vocab_size])  # Using Embeddings weights for vocab projection
 
         return logits
 
@@ -205,31 +200,30 @@ class GPT(tf.keras.Model):
         config.vocab_size = 50257  # openai's model vocabulary
         config.block_size = 1024  # openai's model block_size
         model = GPT(config)
-        sd = copy(model.weights)
 
         # init a huggingface/transformers model
         model_hf = TFGPT2LMHeadModel.from_pretrained(model_type)
-        sd_hf = copy(model_hf.weights)
 
         # copy while ensuring all of the parameters are aligned and match in names and shapes
-        # keys = [k for k in sd_hf if not k.endswith('attn.masked_bias')]  # ignore these
-        keys = [k for k in sd_hf if not k.name.endswith('attn.masked_bias')]  # ignore these
-        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+        hf_keys = [k.name for k in model_hf.weights if not k.name.endswith('attn/masked_bias')]  # ignore these
+        md_keys = [k.name for k in model.weights]
+        transposed = ['c_attn/bias', 'c_proj/bias', 'c_fc/bias', 'c_proj/bias']
         # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla nn.Linear.
         # this means that we have to transpose these weights when we import them
-        print(len(keys))
-        print(len(sd))
-        assert len(keys) == len(sd)
-        for k in keys:
-            if any(k.name.endswith(w) for w in transposed):
-                # special treatment for the Conv1D weights we need to transpose
-                assert sd_hf[k].shape[::-1] == sd[k].shape
-                sd[k].copy_(sd_hf[k].t())
+
+        assert len(md_keys) == len(hf_keys)
+        for hf, md in zip(*(hf_keys, md_keys)):
+            if any(hf.endswith(w + ":0") for w in transposed):
+                assert get_weights_by_name(model_hf, hf).shape[1] == get_weights_by_name(model, md).shape
+                get_weights_by_name(model, md).assign(get_weights_by_name(model_hf, hf).numpy()[0])
+                print(np.mean(get_weights_by_name(model, md).numpy()) - np.mean(
+                    get_weights_by_name(model_hf, hf).numpy()[0]))
             else:
                 # vanilla copy over the other parameters
-                get_weights_by_name(model, k.name).shape
-                assert sd_hf[k].shape == sd[k].shape
-                sd[k].copy_(sd_hf[k])
+                print(hf, "----", md)
+                assert get_weights_by_name(model_hf, hf).shape == get_weights_by_name(model, md).shape
+                get_weights_by_name(model, md).assign(get_weights_by_name(model_hf, hf).numpy())
+                # get_weights_by_name(model, md).numpy = get_weights_by_name(model_hf, hf).numpy
 
         return model
 
@@ -274,7 +268,42 @@ class GPT(tf.keras.Model):
         optimizer.exclude_from_weight_decay(var_list=list(blacklist_weight_modules))
         return optimizer
 
-    def generate(self, x):
-        pass
+    def generate(self, tokenizer, context=None, max_new_tokens=512, temperature=1, top_k=8):
+        bos = 0
+        eos = 8
+        if context is None:
+            print("Give some context to model.................")
+            return
+        context = tf.expand_dims(tokenizer(context), 0)
+        prev = context
+        output = context
+        past = None
+        for i in range(max_new_tokens):
+            logits = self(prev)
+            print(logits)
+            logits = logits[:, -1, :] / tf.cast(temperature, tf.float32)
+            # print(logits)
+            logits = top_k_logits(logits, k=top_k)
+            # print(logits)
+            samples = tf.random.categorical(logits, num_samples=1, dtype=tf.int32)
+            # print(samples)
+            if tf.equal(samples, eos):
+                # print("Predicted end of sequence.")
+                break
+
+            # print("shape.........")
+            # print(tf.shape(output))
+            # print(tf.shape(samples))
+            output = tf.concat([output, samples], axis=-1)
+            prev = samples
+            # print(tf.shape(output))
+            # print(output)
+
+        # print("--------------------------")
+        result = tf.squeeze(output, axis=0)
+        pred = [int(i) for i in result]
+        # generated_seq = self.sp.decode_ids(pred[1:])
+        generated_seq = tokenizer.decode(pred[1:])
+        return generated_seq
 
 # model = GPT.from_pretrained('gpt2')

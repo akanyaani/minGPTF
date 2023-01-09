@@ -270,7 +270,7 @@ class BPETokenizer:
         idx = [self.encoder.encode(text)]
         # wrap into TF tensor
         # wrap into TF tensor
-        out = tf.convert_to_tensor(idx, dtype=tf.float)
+        out = tf.convert_to_tensor(idx, dtype=tf.int32)
         return out
 
     def decode(self, idx):
