@@ -3,6 +3,7 @@ from tensorflow.keras.layers import LayerNormalization
 import numpy as np
 
 from mingptf.utils import CfgNode as CN
+from mingptf.utils import create_masks
 
 
 def gelu(x):
@@ -22,7 +23,7 @@ class CausalSelfAttention(tf.keras.layers.Layer):
         # key, query, value projection weights
         self.c_attn = tf.keras.layers.Dense(config.n_embd * 3)
         self.c_proj = tf.keras.layers.Dense(config.n_embd)
-        # Dropuout Layers
+        # Dropout Layers
         self.attn_dropout = tf.keras.layers.Dropout(config.attn_pdrop)
         self.resid_dropout = tf.keras.layers.Dropout(config.resid_pdrop)
 
@@ -37,18 +38,20 @@ class CausalSelfAttention(tf.keras.layers.Layer):
         x = self.c_attn(x)
         q, k, v = tf.split(x, 3, axis=2)
 
-        # Spliting Heads
+        # Splitting Heads
         q = tf.transpose(tf.reshape(q, (B, T, self.n_head, self.depth)), perm=[0, 2, 1, 3])  # (B, nh, T, hs)
         k = tf.transpose(tf.reshape(k, (B, T, self.n_head, self.depth)), perm=[0, 2, 1, 3])  # (B, nh, T, hs)
         v = tf.transpose(tf.reshape(v, (B, T, self.n_head, self.depth)), perm=[0, 2, 1, 3])  # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        att = tf.matmul(q, k, transpose_b=True) * (1.0 / tf.math.sqrt(tf.shape(k)[-1]))
+        att = tf.matmul(q, k, transpose_b=True) * (1.0 / tf.math.sqrt(tf.cast(tf.shape(k)[-1], tf.float32)))
         att += (mask * -1e9)
+        # print(att)
         att = tf.nn.softmax(att, axis=-1)  # (..., seq_len_q, seq_len_k)
+        # print(att)
         att = self.attn_dropout(att)
         y = tf.matmul(att, v)
-        y = tf.reshape(tf.transpose(y, perm=[0, 2, 1, 3]), B, T, C)  # Merging Heads
+        y = tf.reshape(tf.transpose(y, perm=[0, 2, 1, 3]), (B, T, C))  # Merging Heads
 
         # Output Projection
         y = self.resid_dropout(self.c_proj(y))
@@ -75,8 +78,8 @@ class Block(tf.keras.layers.Layer):
 
         self.mlp = MLP(config)
 
-    def __call__(self, x):
-        x = x + self.attn(self.ln_1(x))
+    def __call__(self, x, mask):
+        x = x + self.attn(self.ln_1(x), mask)
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -123,12 +126,21 @@ class GPT(tf.keras.Model):
         self.lm_head = tf.keras.layers.Dense(config.vocab_size, use_bias=False)
 
     def __call__(self, x):
+        mask = create_masks(x)
+        print(mask)
+        """
+        if seq len is 4 then mask looks like this
+               [[0., 1., 1., 1.],
+                [0., 0., 1., 1.],
+                [0., 0., 0., 1.],
+                [0., 0., 0., 0.]]
+        """
         tok_emb = self.wte(x)  # Converting ids to word embeddings
         pos_emb = self.wpe(x)  # Converting position ids to position embeddings
         x = self.drop(tok_emb + pos_emb)  # Embeddings Dropout
 
         for block in self.h:
-            x = block(x)
+            x = block(x, mask)
         x = self.ln_f(x)  # Applying layer Norm
         logits = self.lm_head(x)  # Projecting output to vocab
 
