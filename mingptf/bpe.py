@@ -275,7 +275,7 @@ class BPETokenizer:
 
     def decode(self, idx):
         # ensure a simple 1D tensor for now
-        assert idx.ndim == 1
+        #assert idx.shape == 1
         # decode indices to text
         text = self.encoder.decode(idx.tolist())
         return text

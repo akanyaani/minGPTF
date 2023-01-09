@@ -268,42 +268,16 @@ class GPT(tf.keras.Model, ABC):
         optimizer.exclude_from_weight_decay(var_list=list(blacklist_weight_modules))
         return optimizer
 
-    def generate(self, tokenizer, context=None, max_new_tokens=512, temperature=1, top_k=8):
-        bos = 0
-        eos = 8
-        if context is None:
-            print("Give some context to model.................")
-            return
-        context = tf.expand_dims(tokenizer(context), 0)
-        prev = context
-        output = context
-        past = None
+    def generate(self, idx, max_new_tokens=512, temperature=1, top_k=8):
+
         for i in range(max_new_tokens):
-            logits = self(prev)
-            print(logits)
+            logits = self(idx)
             logits = logits[:, -1, :] / tf.cast(temperature, tf.float32)
-            # print(logits)
             logits = top_k_logits(logits, k=top_k)
-            # print(logits)
             samples = tf.random.categorical(logits, num_samples=1, dtype=tf.int32)
-            # print(samples)
-            if tf.equal(samples, eos):
-                # print("Predicted end of sequence.")
-                break
-
-            # print("shape.........")
-            # print(tf.shape(output))
-            # print(tf.shape(samples))
-            output = tf.concat([output, samples], axis=-1)
-            prev = samples
-            # print(tf.shape(output))
-            # print(output)
-
-        # print("--------------------------")
-        result = tf.squeeze(output, axis=0)
-        pred = [int(i) for i in result]
-        # generated_seq = self.sp.decode_ids(pred[1:])
-        generated_seq = tokenizer.decode(pred[1:])
-        return generated_seq
+            idx = tf.concat([idx, samples], axis=-1)
+        result = tf.squeeze(idx, axis=0)
+        # generated_seq = tokenizer.decode(result.numpy())
+        return result
 
 # model = GPT.from_pretrained('gpt2')
