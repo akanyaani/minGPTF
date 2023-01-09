@@ -15,6 +15,11 @@ $ pip setup.py install
 
 **Usage**
 
+For generating text using GPT2
+```
+$ open generate.ipynb
+```
+
 Here's how you'd instantiate a GPT-2 (124M param version):
 
 ```
