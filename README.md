@@ -4,6 +4,7 @@ Originally implemented in pytorch by Andrej Karpathy :- ["karpathy/minGPT"](http
 
 
 **A Tensorflow re-implementation of minGPT, **
+
 If you guys want to explore proper implemenation of gpt2 in tensorflow have a look at ["akanyaani/gpt-2-tensorflow2.0"](https://github.com/akanyaani/gpt-2-tensorflow2.0)
 
 **Setup**
