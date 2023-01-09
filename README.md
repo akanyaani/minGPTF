@@ -23,8 +23,6 @@ $ model_config = GPT.get_default_config()
 $ model_config.vocab_size = 50257 # openai's model vocabulary
 $ model_config.block_size = 1024  # openai's model block_size (i.e. input context length)
 $ model = GPT(model_config)
-
-
 ```
 
 **License**
