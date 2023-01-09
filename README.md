@@ -1,6 +1,6 @@
 # minGPTF
 
-Originally implemented in pytorch by Andrej Karpathy :- ["karpathy/minGPT"](https://github.com/karpathy/minGPT). 
+Originally implemented in PyTorch by Andrej Karpathy :- ["karpathy/minGPT"](https://github.com/karpathy/minGPT). 
 
 
 #### A Tensorflow un official re-implementation of minGPT
