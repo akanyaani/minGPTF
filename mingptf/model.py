@@ -4,6 +4,11 @@ import numpy as np
 
 from mingptf.utils import CfgNode as CN
 from mingptf.utils import create_masks
+from copy import copy
+
+
+def get_weights_by_name(model, name):
+    return [w for w in model.weights if w.name == name][0]
 
 
 def gelu(x):
@@ -84,6 +89,21 @@ class Block(tf.keras.layers.Layer):
         return x
 
 
+class Transformer(tf.keras.layers.Layer):
+    def __init__(self, config):
+        super().__init__()
+        self.ln_1 = LayerNormalization()
+        self.attn = CausalSelfAttention(config)
+        self.ln_2 = LayerNormalization()
+
+        self.mlp = MLP(config)
+
+    def __call__(self, x, mask):
+        x = x + self.attn(self.ln_1(x), mask)
+        x = x + self.mlp(self.ln_2(x))
+        return x
+
+
 class GPT(tf.keras.Model):
 
     def __init__(self, config):
@@ -92,6 +112,7 @@ class GPT(tf.keras.Model):
         assert config.vocab_size is not None
         assert config.block_size is not None
         self.block_size = config.block_size
+        self.config = config
 
         type_given = config.model_type is not None
         params_given = all([config.n_layer is not None, config.n_head is not None, config.n_embd is not None])
@@ -123,7 +144,10 @@ class GPT(tf.keras.Model):
         self.h = [Block(config) for _ in range(config.n_layer)]
         self.ln_f = LayerNormalization()
 
-        self.lm_head = tf.keras.layers.Dense(config.vocab_size, use_bias=False)
+        self(np.array(np.array([[1, 3, 5]])))  # Passing dummy input
+        # report number of parameters (note we don't count the decoder parameters in lm_head)
+        n_params = np.sum([np.prod(v.get_shape().as_list()) for v in self.weights[:-1]])
+        print("number of parameters: %.2fM" % (n_params / 1e6,))
 
     def __call__(self, x):
         mask = create_masks(x)
@@ -142,7 +166,10 @@ class GPT(tf.keras.Model):
         for block in self.h:
             x = block(x, mask)
         x = self.ln_f(x)  # Applying layer Norm
-        logits = self.lm_head(x)  # Projecting output to vocab
+
+        h_flat = tf.reshape(x, [-1, self.config.n_embd])
+        logits = tf.reshape(tf.matmul(h_flat, self.wte.weights, transpose_b=True), x.get_shape().as_list()[:-1] + [
+            self.config.vocab_size])  # Using Embeddings weights for vocab projection
 
         return logits
 
@@ -178,29 +205,31 @@ class GPT(tf.keras.Model):
         config.vocab_size = 50257  # openai's model vocabulary
         config.block_size = 1024  # openai's model block_size
         model = GPT(config)
-        sd = model.state_dict()
+        sd = copy(model.weights)
 
         # init a huggingface/transformers model
         model_hf = TFGPT2LMHeadModel.from_pretrained(model_type)
-        sd_hf = model_hf.state_dict()
+        sd_hf = copy(model_hf.weights)
 
         # copy while ensuring all of the parameters are aligned and match in names and shapes
-        keys = [k for k in sd_hf if not k.endswith('attn.masked_bias')]  # ignore these
+        # keys = [k for k in sd_hf if not k.endswith('attn.masked_bias')]  # ignore these
+        keys = [k for k in sd_hf if not k.name.endswith('attn.masked_bias')]  # ignore these
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
         # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla nn.Linear.
         # this means that we have to transpose these weights when we import them
+        print(len(keys))
+        print(len(sd))
         assert len(keys) == len(sd)
         for k in keys:
-            if any(k.endswith(w) for w in transposed):
+            if any(k.name.endswith(w) for w in transposed):
                 # special treatment for the Conv1D weights we need to transpose
                 assert sd_hf[k].shape[::-1] == sd[k].shape
-                with torch.no_grad():
-                    sd[k].copy_(sd_hf[k].t())
+                sd[k].copy_(sd_hf[k].t())
             else:
                 # vanilla copy over the other parameters
+                get_weights_by_name(model, k.name).shape
                 assert sd_hf[k].shape == sd[k].shape
-                with torch.no_grad():
-                    sd[k].copy_(sd_hf[k])
+                sd[k].copy_(sd_hf[k])
 
         return model
 
@@ -247,3 +276,5 @@ class GPT(tf.keras.Model):
 
     def generate(self, x):
         pass
+
+# model = GPT.from_pretrained('gpt2')
