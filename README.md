@@ -65,7 +65,7 @@ TO DO
 * ["Huggingface pytorch-transformers"](https://github.com/huggingface/pytorch-transformers)
 * ["Tensorflow Transformers"](https://www.tensorflow.org/beta/tutorials/text/transformer)
 * ["The Illustrated GPT-2 "](https://jalammar.github.io/illustrated-gpt2/)
-* 
+
 **Author**
 
 * Abhay Kumar
