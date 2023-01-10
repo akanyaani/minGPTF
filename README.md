@@ -66,6 +66,10 @@ TO DO
 * ["Tensorflow Transformers"](https://www.tensorflow.org/beta/tutorials/text/transformer)
 * ["The Illustrated GPT-2 "](https://jalammar.github.io/illustrated-gpt2/)
 
+**Contribution**
+
+* Your issues and PRs are always welcome.
+
 **Author**
 
 * Abhay Kumar
