@@ -52,9 +52,9 @@ $ model.fit(train_data, test_data, test_freq=5)
 
 TO DO
 ```
-1. Tensorfboard loging
-3. Mixed precison training
-4. Fine-Tuning wrapper.
+1. Tensorfboard loging.
+2. Mixed precison training.
+3. Fine-Tuning wrapper.
 ```
 
 **References:**
