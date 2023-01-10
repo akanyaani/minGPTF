@@ -3,7 +3,7 @@
 Originally implemented in PyTorch by Andrej Karpathy :- ["karpathy/minGPT"](https://github.com/karpathy/minGPT). 
 
 
-#### A Tensorflow un official re-implementation of minGPT
+#### A Tensorflow implementation of minGPT
 
 I have other implemenation of GPT2 also in tensorflow, you can have a look at ["akanyaani/gpt-2-tensorflow2.0"](https://github.com/akanyaani/gpt-2-tensorflow2.0)
 
@@ -12,7 +12,7 @@ I have other implemenation of GPT2 also in tensorflow, you can have a look at ["
 ```
 $ git clone https://github.com/akanyaani/minGPTF
 $ cd minGPTF
-$ pip setup.py install
+$ python setup.py install
 ```
 
 **Usage**
